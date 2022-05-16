@@ -4,6 +4,7 @@ import lombok.SneakyThrows;
 import net.sf.geographiclib.Geodesic;
 import net.sf.geographiclib.GeodesicData;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.IteratorUtils;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema;
 import org.apache.spark.storage.StorageLevel;
@@ -21,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.apache.spark.sql.functions.col;
 
@@ -133,14 +135,24 @@ public class ParserFile implements Serializable {
         }, Encoders.tuple(Encoders.STRING(), Encoders.LONG(), Encoders.kryo(TripNode.class)));
 
         return objectDataset
-                .sort(col("_2"))
+//                .sort(col("_2"))
                 .groupByKey(Tuple3::_1, Encoders.STRING())
                 .flatMapGroups((k, v) -> {
                     List<TripLine> lineList = new ArrayList<>();
                     List<Coordinate> coordinates = new ArrayList<>();
+                    List<Tuple3> tuple3List = IteratorUtils.toList(v);
+                    List<TripNode> tripNodes = new ArrayList<>();
+                    for (Tuple3 tuple3 : tuple3List) {
+                        tripNodes.add((TripNode) tuple3._3());
+                    }
+                    List<TripNode> collect = tripNodes.stream().sorted((x, y) -> {
+                        long o1 = x.getInstantTime();
+                        long o2 = y.getInstantTime();
+                        return Long.valueOf(o1 - o2).intValue();
+                    }).collect(Collectors.toList());
+
                     TripNode lastTripNode = new TripNode();
-                    while (v.hasNext()) {
-                        TripNode node = v.next()._3();
+                    for (TripNode node : collect) {
                         if (CollectionUtils.isEmpty(coordinates)) {
                             coordinates.add(node.getCoordinate());
                             lastTripNode = node;

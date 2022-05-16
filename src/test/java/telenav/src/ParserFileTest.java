@@ -30,7 +30,7 @@ public class ParserFileTest {
 
     @Test
     public void mainTest() {
-//        Exploration.main(new String[]{"-d","file:///e:/temp/wejopd/0902/hr=0/*.gz.parquet", "-o", "file:///d:/vehicle_out/test_spark",});
+        Exploration.main(new String[]{"-d","file:///e:/temp/wejopd/0902/hr=0/*.gz.parquet", "-o", "file:///d:/vehicle_out/test_spark",});
 //        Exploration.main(new String[]{"-d","s3://wejopd/Vehicle-Movements/dt=2021-09-02/hr=0/*.gz.parquet", "-o", "file:///d:/vehicle_out/test_spark",});
     }
 
