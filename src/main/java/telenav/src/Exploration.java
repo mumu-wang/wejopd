@@ -42,6 +42,9 @@ public class Exploration {
         if (cmd.hasOption("f")) {
             mapArgs.put("f", cmd.getOptionValue("f"));
         }
+        if (cmd.hasOption("j")) {
+            mapArgs.put("j", cmd.getOptionValue("j"));
+        }
         return mapArgs;
     }
 
@@ -61,7 +64,7 @@ public class Exploration {
                 && StringUtils.isNotEmpty(mapArgs.get("j"))
         ) {
             ParserFile parserFile = new ParserFile();
-            Dataset<Row> row = parserFile.readFileCsv(mapArgs.get("d"));
+            Dataset<Row> row = parserFile.readFileByParquet(mapArgs.get("d"));
             parserFile.filterRecordByJourneyId(row, mapArgs.get("j"), mapArgs.get("o"));
         }// -d -o  comprise trips
         else if (StringUtils.isNotEmpty(mapArgs.get("d"))

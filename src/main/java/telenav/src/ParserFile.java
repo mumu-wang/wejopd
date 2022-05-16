@@ -12,17 +12,15 @@ import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.io.WKTReader;
-import scala.Tuple3;
-import scala.Tuple4;
+import scala.*;
 
 import java.io.Serializable;
+import java.lang.Long;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-
-import scala.Tuple6;
 
 import static org.apache.spark.sql.functions.col;
 
@@ -55,7 +53,7 @@ public class ParserFile implements Serializable {
 //                .set("spark.hadoop.fs.s3a.proxy.port", "3128");
         SparkSession
                 .builder()
-//                .master("local[*]")
+                .master("local[*]")
                 .appName("exploration wejopd ev data")
                 .config("spark.sql.crossJoin.enabled", true)
 //                .config(sparkConf)
@@ -90,11 +88,22 @@ public class ParserFile implements Serializable {
 
     @SneakyThrows
     public void filterRecordByJourneyId(Dataset<Row> dataset, String journeyId, String output) {
-        final WKTReader reader = new WKTReader();
         dataset
                 .filter(x -> x.getAs("journeyId").equals(journeyId))
+                .map(x -> {
+                    String timeStamp = x.getAs("capturedTimestamp");
+                    String journey = x.getAs("journeyId");
+                    GenericRowWithSchema location = (GenericRowWithSchema) x.getAs("location");
+                    double latitude = location.getAs("latitude");
+                    double longitude = location.getAs("longitude");
+                    GenericRowWithSchema metrics = (GenericRowWithSchema) x.getAs("metrics");
+                    double speed = metrics.getAs("speed");
+                    return Tuple5.apply(timeStamp, journey, latitude, longitude, speed);
+                }, Encoders.tuple(Encoders.STRING(), Encoders.STRING(), Encoders.DOUBLE(), Encoders.DOUBLE(), Encoders.DOUBLE()))
+                .sort(col("_1"))
                 .repartition(1)
                 .write()
+                .option("header", "true")
                 .mode(SaveMode.Overwrite)
                 .csv(output);
     }
