@@ -7,11 +7,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.IteratorUtils;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema;
-import org.apache.spark.storage.StorageLevel;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.LineString;
+import org.locationtech.jts.geom.*;
 import org.locationtech.jts.io.WKTReader;
 import scala.*;
 
@@ -73,44 +69,19 @@ public class ParserFile implements Serializable {
     }
 
     @SneakyThrows
-    public void filterRecordByBbox(Dataset<Row> dataset, String bbox, String output) {
+    public Dataset<Row> filterRawParquetByBBox(Dataset<Row> dataset, String bbox){
         final WKTReader reader = new WKTReader();
-        Geometry santaClaraBoundaryPolygon = reader.read(bbox);
-        dataset
-                .filter(x -> {
-                    WKTReader readLinestring = new WKTReader();
-                    Geometry lineString = readLinestring.read((String) x.getAs("_1"));
-                    return santaClaraBoundaryPolygon.contains(lineString) || santaClaraBoundaryPolygon.intersects(lineString);
-                })
-                .repartition(1)
-                .write()
-                .mode(SaveMode.Overwrite)
-                .csv(output);
+        Geometry polygon = reader.read(bbox);
+        return dataset.filter(x->{
+            GenericRowWithSchema location = (GenericRowWithSchema) x.getAs("location");
+            double latitude = location.getAs("latitude");
+            double longitude = location.getAs("longitude");
+            Point point = new GeometryFactory().createPoint(new Coordinate(longitude, latitude));
+            return polygon.contains(point);
+        });
     }
 
-    @SneakyThrows
-    public void filterRecordByJourneyId(Dataset<Row> dataset, String journeyId, String output) {
-        dataset
-                .filter(x -> x.getAs("journeyId").equals(journeyId))
-                .map(x -> {
-                    String timeStamp = x.getAs("capturedTimestamp");
-                    String journey = x.getAs("journeyId");
-                    GenericRowWithSchema location = (GenericRowWithSchema) x.getAs("location");
-                    double latitude = location.getAs("latitude");
-                    double longitude = location.getAs("longitude");
-                    GenericRowWithSchema metrics = (GenericRowWithSchema) x.getAs("metrics");
-                    double speed = metrics.getAs("speed");
-                    return Tuple5.apply(timeStamp, journey, latitude, longitude, speed);
-                }, Encoders.tuple(Encoders.STRING(), Encoders.STRING(), Encoders.DOUBLE(), Encoders.DOUBLE(), Encoders.DOUBLE()))
-                .sort(col("_1"))
-                .repartition(1)
-                .write()
-                .option("header", "true")
-                .mode(SaveMode.Overwrite)
-                .csv(output);
-    }
-
-    public Dataset<TripLine> parserFile(Dataset<Row> rowDataset) {
+    public Dataset<TripLine> makeTrips(Dataset<Row> rowDataset) {
 //        rowDataset = rowDataset.filter(col("journeyId").equalTo("f95eb8123f32866dfc4f89175af7c201bf19ad7f"));
         Dataset<Tuple3<String, Long, TripNode>> objectDataset = rowDataset.map(x -> {
             // <journeyID, instantTime, TripNode>
@@ -129,13 +100,10 @@ public class ParserFile implements Serializable {
             tripNode.setSpeed(metrics.getAs("speed"));
             tripNode.setHeading(metrics.getAs("heading"));
             GenericRowWithSchema vehicle = (GenericRowWithSchema) x.getAs("vehicle");
-            String vehicleId = vehicle.getAs("wejoVehicleTypeId").toString();
             return Tuple3.apply(x.getAs("journeyId"), timeStamp, tripNode);
-//            return Tuple3.apply(vehicleId, timeStamp, tripNode);
         }, Encoders.tuple(Encoders.STRING(), Encoders.LONG(), Encoders.kryo(TripNode.class)));
 
         return objectDataset
-//                .sort(col("_2"))
                 .groupByKey(Tuple3::_1, Encoders.STRING())
                 .flatMapGroups((k, v) -> {
                     List<TripLine> lineList = new ArrayList<>();
@@ -184,6 +152,73 @@ public class ParserFile implements Serializable {
 
     }
 
+    public void writeTripDataset(String output, Dataset<TripLine> tripLineDataset) {
+        tripLineDataset.map(x -> Tuple4.apply(x.toString(), x.getJourneyId(), Instant.ofEpochSecond(x.getInstantTime()).toString(), x.getDistance()), Encoders.tuple(Encoders.STRING(), Encoders.STRING(), Encoders.STRING(), Encoders.LONG()))
+//                .repartition(3)
+                .write()
+                .option("header", "true")
+                .mode(SaveMode.Overwrite)
+                .csv(output);
+    }
+
+    @SneakyThrows
+    public void filterRecordByBbox(Dataset<Row> dataset, String bbox, String output) {
+        final WKTReader reader = new WKTReader();
+        Geometry polygon = reader.read(bbox);
+        dataset
+                .filter(x -> {
+                    WKTReader readLinestring = new WKTReader();
+                    Geometry lineString = readLinestring.read((String) x.getAs("_1"));
+                    return polygon.contains(lineString) || polygon.intersects(lineString);
+                })
+                .repartition(1)
+                .write()
+                .mode(SaveMode.Overwrite)
+                .csv(output);
+    }
+
+    @SneakyThrows
+    public void filterRecordByJourneyId(Dataset<Row> dataset, String journeyId, String output) {
+        dataset
+                .filter(x -> x.getAs("journeyId").equals(journeyId))
+                .map(x -> {
+                    String timeStamp = x.getAs("capturedTimestamp");
+                    String journey = x.getAs("journeyId");
+                    GenericRowWithSchema location = (GenericRowWithSchema) x.getAs("location");
+                    double latitude = location.getAs("latitude");
+                    double longitude = location.getAs("longitude");
+                    GenericRowWithSchema metrics = (GenericRowWithSchema) x.getAs("metrics");
+                    double speed = metrics.getAs("speed");
+                    return Tuple5.apply(timeStamp, journey, latitude, longitude, speed);
+                }, Encoders.tuple(Encoders.STRING(), Encoders.STRING(), Encoders.DOUBLE(), Encoders.DOUBLE(), Encoders.DOUBLE()))
+                .sort(col("_1"))
+                .repartition(1)
+                .write()
+                .option("header", "true")
+                .mode(SaveMode.Overwrite)
+                .csv(output);
+    }
+
+    public void filterRecordByDistance(String tripPath, String outputPath, String distance) {
+        SparkSession sparkSession = SparkSession.getActiveSession().get();
+        Dataset<Row> resultDataset = sparkSession.read().option("header", "true").csv(tripPath);
+//        resultDataset.persist(StorageLevel.DISK_ONLY());
+        List<String> list = Collections.singletonList(String.valueOf(resultDataset.count()));
+        resultDataset
+                .filter(x -> Integer.parseInt(x.getAs("_4")) > Integer.parseInt(distance))
+                .repartition(1)
+                .write()
+                .option("header", "true")
+                .mode(SaveMode.Overwrite)
+                .csv(outputPath);
+
+//        sparkSession
+//                .createDataset(list, Encoders.STRING())
+//                .write()
+//                .mode(SaveMode.Overwrite)
+//                .text(outputPath + "/total_count");
+    }
+
     private void addTrip2List(List<Coordinate> coordinates, TripNode lastTripNode, List<TripLine> lineList) {
         if (coordinates.size() >= 2) {
             TripLine tripLine = new TripLine();
@@ -197,37 +232,6 @@ public class ParserFile implements Serializable {
                 lineList.add(tripLine);
             }
         }
-    }
-
-    public void writeTripDataset(String output, Dataset<TripLine> tripLineDataset) {
-        tripLineDataset.map(x -> Tuple4.apply(x.toString(), x.getJourneyId(), Instant.ofEpochSecond(x.getInstantTime()).toString(), x.getDistance()), Encoders.tuple(Encoders.STRING(), Encoders.STRING(), Encoders.STRING(), Encoders.LONG()))
-//                .repartition(1)
-                .write()
-                .option("header", "true")
-                .mode(SaveMode.Overwrite)
-                .csv(output);
-    }
-
-    public void analysisResultFiles(String resultPath, String outputPath) {
-        SparkSession sparkSession = SparkSession.getActiveSession().get();
-        Dataset<Row> resultDataset = sparkSession.read().option("header", "true").csv(resultPath);
-        resultDataset.persist(StorageLevel.DISK_ONLY());
-        List<String> list = Collections.singletonList(String.valueOf(resultDataset.count()));
-
-
-        resultDataset
-                .filter(x -> Integer.parseInt(x.getAs("_4")) > 4000)
-                .repartition(1)
-                .write()
-                .option("header", "true")
-                .mode(SaveMode.Overwrite)
-                .csv(outputPath);
-
-        sparkSession
-                .createDataset(list, Encoders.STRING())
-                .write()
-                .mode(SaveMode.Overwrite)
-                .text(outputPath + "/total_count");
     }
 
 
