@@ -51,7 +51,7 @@ public class ParserFile implements Serializable {
 //                .set("spark.hadoop.fs.s3a.proxy.port", "3128");
         SparkSession
                 .builder()
-                .master("local[*]")
+//                .master("local[*]")
                 .appName("exploration wejopd ev data")
                 .config("spark.sql.crossJoin.enabled", true)
 //                .config(sparkConf)
@@ -82,7 +82,6 @@ public class ParserFile implements Serializable {
     }
 
     public Dataset<TripLine> makeTrips(Dataset<Row> rowDataset) {
-//        rowDataset = rowDataset.filter(col("journeyId").equalTo("f95eb8123f32866dfc4f89175af7c201bf19ad7f"));
         Dataset<Tuple3<String, Long, TripNode>> objectDataset = rowDataset.map(x -> {
             // <journeyID, instantTime, TripNode>
             TripNode tripNode = new TripNode();
@@ -94,12 +93,10 @@ public class ParserFile implements Serializable {
             GenericRowWithSchema location = (GenericRowWithSchema) x.getAs("location");
             double latitude = location.getAs("latitude");
             double longitude = location.getAs("longitude");
-            GeometryFactory geometryFactory = new GeometryFactory();
             tripNode.setCoordinate(new Coordinate(longitude, latitude));
             GenericRowWithSchema metrics = (GenericRowWithSchema) x.getAs("metrics");
             tripNode.setSpeed(metrics.getAs("speed"));
             tripNode.setHeading(metrics.getAs("heading"));
-            GenericRowWithSchema vehicle = (GenericRowWithSchema) x.getAs("vehicle");
             return Tuple3.apply(x.getAs("journeyId"), timeStamp, tripNode);
         }, Encoders.tuple(Encoders.STRING(), Encoders.LONG(), Encoders.kryo(TripNode.class)));
 
@@ -202,8 +199,6 @@ public class ParserFile implements Serializable {
     public void filterRecordByDistance(String tripPath, String outputPath, String distance) {
         SparkSession sparkSession = SparkSession.getActiveSession().get();
         Dataset<Row> resultDataset = sparkSession.read().option("header", "true").csv(tripPath);
-//        resultDataset.persist(StorageLevel.DISK_ONLY());
-        List<String> list = Collections.singletonList(String.valueOf(resultDataset.count()));
         resultDataset
                 .filter(x -> Integer.parseInt(x.getAs("_4")) > Integer.parseInt(distance))
                 .repartition(1)
@@ -212,11 +207,6 @@ public class ParserFile implements Serializable {
                 .mode(SaveMode.Overwrite)
                 .csv(outputPath);
 
-//        sparkSession
-//                .createDataset(list, Encoders.STRING())
-//                .write()
-//                .mode(SaveMode.Overwrite)
-//                .text(outputPath + "/total_count");
     }
 
     private void addTrip2List(List<Coordinate> coordinates, TripNode lastTripNode, List<TripLine> lineList) {
