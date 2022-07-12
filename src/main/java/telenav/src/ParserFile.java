@@ -51,7 +51,7 @@ public class ParserFile implements Serializable {
 //                .set("spark.hadoop.fs.s3a.proxy.port", "3128");
         SparkSession
                 .builder()
-//                .master("local[*]")
+                .master("local[*]")
                 .appName("exploration wejopd ev data")
                 .config("spark.sql.crossJoin.enabled", true)
 //                .config(sparkConf)

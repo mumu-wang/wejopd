@@ -5,6 +5,7 @@ import org.apache.spark.sql.Row;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
@@ -13,10 +14,14 @@ public class ParserFileTest {
 
     @Test
     public void readFileTest() {
+
+        String nodes_path = Paths.get("src", "test", "resources", "ev_data").toFile().getAbsolutePath();
+        String ways_path = Paths.get("src", "test", "resources", "ev_data_out").toFile().getAbsolutePath();
+
         ParserFile parserFile = new ParserFile();
-        Dataset<Row> row = parserFile.readFileByParquet("e:\\temp\\wejopd\\0220\\*.gz.parquet");
+        Dataset<Row> row = parserFile.readFileByParquet(nodes_path + "/*.gz.parquet");
         Dataset<TripLine> lineDataset = parserFile.makeTrips(row);
-        parserFile.writeTripDataset("D:/vehicle_out/trip.csv", lineDataset);
+        parserFile.writeTripDataset(ways_path, lineDataset);
     }
 
     @Test
